@@ -5,6 +5,7 @@ import Crypto from 'crypto';
 import Frontmatter from 'front-matter';
 import path from 'path';
 import { promisify } from 'util';
+import fs from 'fs';
 import langAssembler from '../../../lib/lang-assembler.js';
 import { RawResponse, RedirectResponse, PencilResponse } from './responses/index.js';
 import templateAssembler from '../../../lib/template-assembler.js';
@@ -26,6 +27,38 @@ const internals = {
     graphQLCacheTTL: 1000 * 300,
     validCustomTemplatePageTypes: ['brand', 'category', 'page', 'product'],
 };
+
+/**
+ * Attempts to read WebDAV content from local assets directory
+ * @param {string} requestPath - The request path (e.g., /content/example.html or /images/stencil/original/content/example.jpg)
+ * @returns {Promise<Buffer|null>} - The file content or null if not found
+ */
+internals.readFromLocalWebdavAssets = async (requestPath) => {
+    try {
+        let relativePath;
+
+        // Handle both /content/ and /images/stencil/original/content/ paths
+        if (requestPath.startsWith('/images/stencil/original/content/')) {
+            // Remove /images/stencil/original/content/ prefix
+            relativePath = requestPath.replace(/^\/images\/stencil\/original\/content\/?/, '');
+        } else {
+            // Remove leading /content/ to get the relative path
+            relativePath = requestPath.replace(/^\/content\/?/, '');
+        }
+
+        const localPath = path.join(process.cwd(), 'assets', 'cdn', 'webdav', relativePath);
+
+        // Check if file exists
+        if (fs.existsSync(localPath)) {
+            const content = await fs.promises.readFile(localPath);
+            return content;
+        }
+    } catch (error) {
+        // Silently fail - if local fallback doesn't work, return null
+    }
+    return null;
+};
+
 function register(server, options) {
     internals.options = defaultsDeep(options, internals.options);
     server.expose('implementation', internals.implementation);
@@ -114,7 +147,9 @@ internals.getResponse = async (request) => {
     // (5xx will be just thrown by axios)
     const contentType = response.headers['content-type'] || '';
     const isResponseJson = contentType.toLowerCase().includes('application/json');
-    const isWebDavRequest = request.path.startsWith('/content');
+    const isWebDavRequest =
+        request.path.startsWith('/content') ||
+        request.path.startsWith('/images/stencil/original/content');
     const isBinaryContent = contentType
         .toLowerCase()
         .match(/^(image|video|audio|application\/octet-stream|application\/pdf)/);
@@ -123,11 +158,18 @@ internals.getResponse = async (request) => {
     if (isResponseJson) {
         bcAppData = JSON.parse(await readFromStream(response.data));
     } else if (isWebDavRequest) {
-        if (isBinaryContent) {
-            // For binary content, don't read the stream - pass it through as-is
+        // Check if WebDAV request returned 404, try local fallback
+        if (response.status === 404) {
+            const localContent = await internals.readFromLocalWebdavAssets(request.path);
+            if (localContent) {
+                bcAppData = localContent;
+                response.status = 200;
+            } else {
+                bcAppData = response.data;
+            }
+        } else if (isBinaryContent) {
             bcAppData = response.data;
         } else {
-            // For text content, read as string
             const tappedStream = tapStream(response.data, (body) => {
                 return body;
             });
