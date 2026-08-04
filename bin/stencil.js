@@ -9,6 +9,10 @@ program
         'Interactively create a .stencil file which configures how to run a BigCommerce store locally.',
     )
     .command('start', 'Starts up BigCommerce store using theme files in the current directory.')
+    .command(
+        'serve',
+        'Serves the theme without any development tooling. Intended for preview and staging deployments.',
+    )
     .command('bundle', 'Bundles up the theme into a zip file which can be uploaded to BigCommerce.')
     .command('release', "Create a new release in the theme's github repository.")
     .command('push', 'Bundles up the theme into a zip file and uploads it to your store.')

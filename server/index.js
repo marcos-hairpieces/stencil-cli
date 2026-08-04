@@ -14,7 +14,11 @@ function buildManifest(srcManifest, options) {
     const parsedSecureUrl = new URL(options.dotStencilFile.storeUrl); // The url to a secure page (prompted as login page)
     const parsedNormalUrl = new URL(options.dotStencilFile.normalStoreUrl); // The host url of the homepage;
     const storeUrl = parsedSecureUrl.protocol + '//' + parsedSecureUrl.host;
-    resManifest.server.port = parseInt(options.dotStencilFile.port, 10) + 1;
+    // `stencil start` puts BrowserSync on the configured port and proxies to Hapi one above
+    // it, so it takes the default offset of 1. `stencil serve` has no proxy hop and passes 0
+    // to bind the configured port directly.
+    const portOffset = options.portOffset === undefined ? 1 : options.portOffset;
+    resManifest.server.port = parseInt(options.dotStencilFile.port, 10) + portOffset;
     pluginsByName['./plugins/router/router.module.js'].storeUrl = storeUrl;
     pluginsByName['./plugins/router/router.module.js'].normalStoreUrl =
         parsedNormalUrl.protocol + '//' + parsedNormalUrl.host;
@@ -24,7 +28,14 @@ function buildManifest(srcManifest, options) {
         options.stencilCliVersion;
     pluginsByName['./plugins/router/router.module.js'].accessToken =
         options.dotStencilFile.accessToken;
+    pluginsByName['./plugins/router/router.module.js'].healthCheckEnabled =
+        options.healthCheckEnabled === true;
     pluginsByName['./plugins/renderer/renderer.module.js'].useCache = options.useCache;
+    // Both default to the development behaviour so `stencil start` is unaffected.
+    pluginsByName['./plugins/renderer/renderer.module.js'].debugQueriesEnabled =
+        options.debugQueriesEnabled !== false;
+    pluginsByName['./plugins/renderer/renderer.module.js'].inDevelopment =
+        options.inDevelopment !== false;
     pluginsByName['./plugins/renderer/renderer.module.js'].username =
         options.dotStencilFile.username;
     pluginsByName['./plugins/renderer/renderer.module.js'].token = options.dotStencilFile.token;
@@ -49,10 +60,13 @@ async function create(options) {
     const server = await Glue.compose(serverManifest, { relativeTo: getDirname });
     await server.start();
 
-    console.log(logo);
+    if (options.showLogo !== false) {
+        console.log(logo);
+    }
 
     return server;
 }
+export { buildManifest };
 export default {
     create,
 };

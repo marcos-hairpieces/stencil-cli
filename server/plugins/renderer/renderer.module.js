@@ -386,6 +386,10 @@ internals.getPencilResponse = (data, request, response, configuration, renderedR
             statusCode: response.status,
         },
         internals.themeAssembler,
+        {
+            debugQueriesEnabled: internals.options.debugQueriesEnabled !== false,
+            inDevelopment: internals.options.inDevelopment !== false,
+        },
     );
 };
 /**

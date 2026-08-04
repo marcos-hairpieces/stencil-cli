@@ -62,7 +62,7 @@ const compatibilizeTemplateEngine = (version) => version.replace('_', '-');
  * @param {Object} request
  * @param {Object} context
  */
-const makeDecorator = (request, context) => (content) => {
+const makeDecorator = (request, context, debugQueriesEnabled) => (content) => {
     let updatedContent = content;
     if (context.settings) {
         const baseUrlregex = new RegExp(escapeRegex(context.settings.base_url), 'g');
@@ -70,7 +70,7 @@ const makeDecorator = (request, context) => (content) => {
         const secureBaseUrlRegex = new RegExp(escapeRegex(context.settings.secure_base_url), 'g');
         updatedContent = content.replace(secureBaseUrlRegex, '');
     }
-    if (request.query.debug === 'bar') {
+    if (debugQueriesEnabled && request.query.debug === 'bar') {
         const contextStr = escapeHtml(JSON.stringify(context, null, 2));
         const debugBar = `<pre style="background-color:#EEE; word-wrap:break-word;"> ${contextStr} </pre>`;
         const bodyRegex = /<\/body>/;
@@ -93,10 +93,18 @@ class PencilResponse {
      * @param data.statusCode
      * @param data.renderedRegions
      * @param assembler
+     * @param {Object} [options]
+     * @param {boolean} [options.debugQueriesEnabled] - allow ?debug=context and ?debug=bar.
+     *   Both expose the full page context, which includes settings.storefront_api.token, so
+     *   they are disabled when the server is reachable by anyone but the developer.
+     * @param {boolean} [options.inDevelopment] - value for the in_development template flag
+     *   (in_production receives its inverse)
      */
-    constructor(data, assembler) {
+    constructor(data, assembler, { debugQueriesEnabled = true, inDevelopment = true } = {}) {
         this.data = data;
         this.assembler = assembler;
+        this.debugQueriesEnabled = debugQueriesEnabled;
+        this.inDevelopment = inDevelopment;
     }
 
     async respond(request, h) {
@@ -114,17 +122,16 @@ class PencilResponse {
             this.assembler,
             templateEngine,
         );
-        // Set the environment to dev
-        this.data.context.in_development = true;
-        this.data.context.in_production = false;
-        paper.addDecorator(makeDecorator(request, this.data.context));
+        this.data.context.in_development = this.inDevelopment;
+        this.data.context.in_production = !this.inDevelopment;
+        paper.addDecorator(makeDecorator(request, this.data.context, this.debugQueriesEnabled));
         paper.setContent(this.data.renderedRegions);
         // Plugins have the opportunity to add/modify the response by using decorators
         each(request.app.decorators, (decorator) => {
             paper.addDecorator(decorator);
         });
         const templatePath = getTemplatePath(request, this.data);
-        if (request.query.debug === 'context') {
+        if (this.debugQueriesEnabled && request.query.debug === 'context') {
             return this.data.context;
         }
         try {

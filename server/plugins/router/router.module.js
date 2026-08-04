@@ -17,6 +17,8 @@ const internals = {
         cssFiles: '/stencil/{versionId}/css/{fileName}.css',
         favicon: '/favicon.ico',
         graphQL: '/graphql',
+        // Namespaced under /_stencil/ rather than /stencil/, which the cdnAssets route owns.
+        health: '/_stencil/health',
     },
 };
 function mapUri(req) {
@@ -180,6 +182,22 @@ internals.registerRoutes = (server) => {
             },
         },
     ]);
+    // Opt-in, for deployments that need a liveness probe. Without it every path falls through
+    // to the renderer catch-all, so probing costs a full store round-trip and reports the
+    // store's health rather than this process's. Hapi routes by specificity, not registration
+    // order, so this literal path takes precedence over '/{url*}' regardless of placement.
+    if (internals.options.healthCheckEnabled) {
+        server.route({
+            method: 'GET',
+            path: internals.paths.health,
+            handler: () => ({ status: 'ok' }),
+            options: {
+                state: {
+                    failAction: 'log',
+                },
+            },
+        });
+    }
 };
 export const name = 'Router';
 export const version = '0.0.1';
