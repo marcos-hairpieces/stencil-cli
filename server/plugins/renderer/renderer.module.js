@@ -31,6 +31,13 @@ function register(server, options) {
     server.expose('implementation', internals.implementation);
 }
 /**
+ * How long a storefront response stays cached, in milliseconds. Deployments can raise it
+ * via the `cacheTTL` option; development keeps the short default so edits show up quickly.
+ *
+ * @returns {number}
+ */
+internals.getCacheTTL = () => internals.options.cacheTTL || internals.cacheTTL;
+/**
  * Renderer Route Handler
  *
  * @param request
@@ -141,7 +148,7 @@ internals.getResponse = async (request) => {
             bcAppData,
             response,
         },
-        internals.cacheTTL,
+        internals.getCacheTTL(),
     );
     return internals.parseResponse(bcAppData, request, response, responseArgs);
 };
@@ -195,7 +202,7 @@ internals.parseResponse = async (bcAppData, request, response, responseArgs) => 
         if (response2.data && response2.data.status === 500) {
             throw new Error('The BigCommerce server responded with a 500 error');
         }
-        cache.put(dataRequestSignature, { response2 }, internals.cacheTTL);
+        cache.put(dataRequestSignature, { response2 }, internals.getCacheTTL());
     }
     const templateFile = response2.data.template_file;
     const entityId = response2.data.entity_id;

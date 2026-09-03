@@ -100,6 +100,9 @@ It differs from `stencil start` in ways that matter for those environments:
     process exits.
 -   **Answers health probes cheaply.** `GET /_stencil/health` returns `200` without making
     a request to your store.
+-   **Caches for as long as you like.** Storefront responses are cached for 15 seconds by
+    default, which suits editing templates but not a preview nobody is editing. Pass
+    `--cache-ttl 300` to hold them for five minutes and cut the calls made to your store.
 
 Theme JavaScript is expected to be built already. Pass `--build` to run the theme's
 production build task once before the server starts listening; a failed build exits

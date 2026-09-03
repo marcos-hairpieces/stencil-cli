@@ -31,6 +31,9 @@ function buildManifest(srcManifest, options) {
     pluginsByName['./plugins/router/router.module.js'].healthCheckEnabled =
         options.healthCheckEnabled === true;
     pluginsByName['./plugins/renderer/renderer.module.js'].useCache = options.useCache;
+    if (options.cacheTTL !== undefined) {
+        pluginsByName['./plugins/renderer/renderer.module.js'].cacheTTL = options.cacheTTL;
+    }
     // Both default to the development behaviour so `stencil start` is unaffected.
     pluginsByName['./plugins/renderer/renderer.module.js'].debugQueriesEnabled =
         options.debugQueriesEnabled !== false;

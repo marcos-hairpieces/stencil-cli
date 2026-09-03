@@ -18,6 +18,11 @@ program
         '-n, --no-cache',
         'Turns off caching for API resource data per storefront page. The cache lasts for 5 minutes before automatically refreshing.',
     )
+    .option(
+        '--cache-ttl [seconds]',
+        'How long storefront API responses are cached per page. Default is 15',
+        parseInt,
+    )
     .option('--build', "Run the theme's production build task once before serving")
     .option('-t, --timeout [timeout]', 'Timeout in seconds for --build. Default is 60', '60');
 const cliOptions = prepareCommand(program);
@@ -28,6 +33,7 @@ const options = {
     variation: cliOptions.variation,
     apiHost: cliOptions.host,
     cache: cliOptions.cache,
+    cacheTtl: cliOptions.cacheTtl,
     build: cliOptions.build,
     timeout: cliOptions.timeout,
 };
