@@ -24,6 +24,7 @@ Commands:
 
   init        Interactively create a .stencil file which configures how to run a BigCommerce store locally.
   start       Starts up the BigCommerce storefront local development environment, using theme files in the current directory and data from the live store.
+  serve       Serves the theme without any development tooling. Intended for preview and staging deployments.
   bundle      Bundles up the theme into a zip file which can be uploaded to BigCommerce.
   release     Create a new release in the theme's github repository.
   push        Bundles up the theme into a zip file and uploads it to your store.
@@ -65,6 +66,45 @@ been used to change certain theme settings, this will update those settings in c
 don't overwrite them on your next upload.
 
 Run `stencil debug` to get information about runtime environment and the configuration
+
+### Serving a theme outside development
+
+`stencil start` is a development command: it runs BrowserSync, watches your files for
+changes, can prompt you to pick a channel, and exposes debug output intended for a
+developer on localhost.
+
+`stencil serve` runs the same local server without any of that. Use it where a theme needs
+to be served but nobody is at a terminal — preview environments, staging deployments,
+review apps, containers:
+
+```shell
+stencil serve --channelId 1 --port 3000
+```
+
+It differs from `stencil start` in ways that matter for those environments:
+
+-   **Non-interactive.** It never prompts. If the store has more than one storefront
+    channel you must pass `--channelId` or `--channelUrl`; otherwise it exits immediately
+    with the list of available channels rather than waiting for input that will never come.
+-   **Binds the port you asked for.** `stencil start` puts BrowserSync on the configured
+    port and the server one above it. `stencil serve` has no proxy hop.
+-   **No debug output.** `?debug=context` and `?debug=bar` are disabled. Both expose the
+    full page context, which includes your storefront API token — fine on localhost, not
+    on a URL other people can reach.
+-   **Renders as production.** `in_development` is `false` and `in_production` is `true`,
+    so the theme behaves the way it would on the live store.
+-   **Writes nothing to your theme.** Unlike `stencil start`, it does not download a
+    default `stencil.conf.cjs` when the theme has none, so it works on a read-only
+    filesystem.
+-   **Shuts down gracefully.** `SIGTERM` and `SIGINT` drain in-flight requests before the
+    process exits.
+-   **Answers health probes cheaply.** `GET /_stencil/health` returns `200` without making
+    a request to your store.
+
+Theme JavaScript is expected to be built already. Pass `--build` to run the theme's
+production build task once before the server starts listening; a failed build exits
+non-zero without binding the port. SCSS needs no build step either way — it is compiled
+per request, exactly as in `stencil start`.
 
 ## Features
 

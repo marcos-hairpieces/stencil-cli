@@ -73,6 +73,98 @@ describe('PencilResponse', () => {
         expect(h.response).toHaveBeenCalledTimes(1);
     });
 
+    describe('debug query parameters', () => {
+        it('should return the raw context for ?debug=context by default', async () => {
+            request.query.debug = 'context';
+            const pencilResponse = new PencilResponse(data, assembler);
+
+            const result = await pencilResponse.respond(request, h);
+
+            expect(result).toBe(data.context);
+            expect(h.response).not.toHaveBeenCalled();
+        });
+
+        it('should ignore ?debug=context when debug queries are disabled', async () => {
+            request.query.debug = 'context';
+            const pencilResponse = new PencilResponse(data, assembler, {
+                debugQueriesEnabled: false,
+            });
+
+            const result = await pencilResponse.respond(request, h);
+
+            expect(result).not.toBe(data.context);
+            expect(h.response).toHaveBeenCalledTimes(1);
+        });
+
+        it('should append the debug bar for ?debug=bar by default', async () => {
+            let result = '';
+            request.query.debug = 'bar';
+            data.template_file = 'pages/page3';
+            data.context.template_engine = 'handlebars-v4';
+            h.response = (output) => {
+                result = output;
+                return response;
+            };
+            const themeAssembler = {
+                async getTemplates(templatesPath, processor) {
+                    const templates = await promisify(templateAssembler.assemble)(
+                        path.join(process.cwd(), 'test/_mocks/themes/valid', 'templates'),
+                        templatesPath,
+                    );
+                    return processor(templates);
+                },
+                getTranslations: async () => ({}),
+            };
+
+            await new PencilResponse(data, themeAssembler).respond(request, h);
+
+            expect(result.content).toContain('background-color:#EEE');
+        });
+
+        it('should not append the debug bar when debug queries are disabled', async () => {
+            let result = '';
+            request.query.debug = 'bar';
+            data.template_file = 'pages/page3';
+            data.context.template_engine = 'handlebars-v4';
+            h.response = (output) => {
+                result = output;
+                return response;
+            };
+            const themeAssembler = {
+                async getTemplates(templatesPath, processor) {
+                    const templates = await promisify(templateAssembler.assemble)(
+                        path.join(process.cwd(), 'test/_mocks/themes/valid', 'templates'),
+                        templatesPath,
+                    );
+                    return processor(templates);
+                },
+                getTranslations: async () => ({}),
+            };
+
+            await new PencilResponse(data, themeAssembler, {
+                debugQueriesEnabled: false,
+            }).respond(request, h);
+
+            expect(result.content).not.toContain('background-color:#EEE');
+        });
+    });
+
+    describe('in_development / in_production context flags', () => {
+        it('should report development mode by default', async () => {
+            await new PencilResponse(data, assembler).respond(request, h);
+
+            expect(data.context.in_development).toBe(true);
+            expect(data.context.in_production).toBe(false);
+        });
+
+        it('should report production mode when inDevelopment is false', async () => {
+            await new PencilResponse(data, assembler, { inDevelopment: false }).respond(request, h);
+
+            expect(data.context.in_development).toBe(false);
+            expect(data.context.in_production).toBe(true);
+        });
+    });
+
     describe('it should successfully render a tempalte with dynamic partials', () => {
         it('should render a template with dynamic partials', async () => {
             let result = '';
