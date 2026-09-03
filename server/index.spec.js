@@ -35,6 +35,20 @@ describe('buildManifest', () => {
         });
     });
 
+    describe('cache TTL', () => {
+        it('should leave the renderer to its own default when none is given', () => {
+            const result = buildManifest(manifest.get('/'), getOptions());
+
+            expect(getPluginOptions(result, RENDERER)).not.toHaveProperty('cacheTTL');
+        });
+
+        it('should pass an explicit cache TTL through to the renderer', () => {
+            const result = buildManifest(manifest.get('/'), getOptions({ cacheTTL: 300000 }));
+
+            expect(getPluginOptions(result, RENDERER)).toMatchObject({ cacheTTL: 300000 });
+        });
+    });
+
     describe('development affordances', () => {
         it('should leave debug queries and development flags enabled by default', () => {
             const result = buildManifest(manifest.get('/'), getOptions());
