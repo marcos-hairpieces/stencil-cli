@@ -86,8 +86,10 @@ It differs from `stencil start` in ways that matter for those environments:
 -   **Non-interactive.** It never prompts. If the store has more than one storefront
     channel you must pass `--channelId` or `--channelUrl`; otherwise it exits immediately
     with the list of available channels rather than waiting for input that will never come.
--   **Binds the port you asked for.** `stencil start` puts BrowserSync on the configured
-    port and the server one above it. `stencil serve` has no proxy hop.
+-   **Binds the port you asked for, on every interface.** `stencil start` puts BrowserSync
+    on the configured port and the server one above it, on localhost. `stencil serve` has
+    no proxy hop and listens on `0.0.0.0` so a container port mapping or reverse proxy can
+    reach it. Pass `--bind 127.0.0.1` to keep it local.
 -   **No debug output.** `?debug=context` and `?debug=bar` are disabled. Both expose the
     full page context, which includes your storefront API token — fine on localhost, not
     on a URL other people can reach.

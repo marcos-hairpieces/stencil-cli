@@ -19,6 +19,11 @@ function buildManifest(srcManifest, options) {
     // to bind the configured port directly.
     const portOffset = options.portOffset === undefined ? 1 : options.portOffset;
     resManifest.server.port = parseInt(options.dotStencilFile.port, 10) + portOffset;
+    // Hapi binds localhost by default, which is right for `start` (BrowserSync fronts it)
+    // but unreachable from outside a container. `serve` passes the address to bind.
+    if (options.host !== undefined) {
+        resManifest.server.host = options.host;
+    }
     pluginsByName['./plugins/router/router.module.js'].storeUrl = storeUrl;
     pluginsByName['./plugins/router/router.module.js'].normalStoreUrl =
         parsedNormalUrl.protocol + '//' + parsedNormalUrl.host;

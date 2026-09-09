@@ -35,6 +35,20 @@ describe('buildManifest', () => {
         });
     });
 
+    describe('bind address', () => {
+        it('should keep the configured localhost host by default', () => {
+            const result = buildManifest(manifest.get('/'), getOptions());
+
+            expect(result.server.host).toEqual('localhost');
+        });
+
+        it('should bind the requested host when given', () => {
+            const result = buildManifest(manifest.get('/'), getOptions({ host: '0.0.0.0' }));
+
+            expect(result.server.host).toEqual('0.0.0.0');
+        });
+    });
+
     describe('cache TTL', () => {
         it('should leave the renderer to its own default when none is given', () => {
             const result = buildManifest(manifest.get('/'), getOptions());

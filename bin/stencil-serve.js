@@ -8,6 +8,7 @@ import { printCliResultErrorAndExit, prepareCommand } from '../lib/cliCommon.js'
 program
     .version(PACKAGE_INFO.version)
     .option('-p, --port [port]', 'Set port number to listen on')
+    .option('--bind [address]', 'Set the address to listen on. Default is 0.0.0.0 (all interfaces)')
     .option('-c, --channelId [channelId]', 'Set the channel id for the storefront', parseInt)
     .option(
         '-cu, --channelUrl [channelUrl]',
@@ -28,6 +29,7 @@ program
 const cliOptions = prepareCommand(program);
 const options = {
     port: cliOptions.port,
+    bind: cliOptions.bind,
     channelId: cliOptions.channelId,
     channelUrl: cliOptions.channelUrl,
     variation: cliOptions.variation,
