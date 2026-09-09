@@ -346,12 +346,17 @@ function getRawAcceptLanguageHeader(request) {
     ) {
         return internals.options.storeSettingsLocale.default_shopper_language;
     }
-    return request.headers['accept-language'];
+    // Browsers always send Accept-Language; curl, uptime monitors and health probes do
+    // not. Fall back to the store default instead of failing the request.
+    return (
+        request.headers['accept-language'] ||
+        internals.options.storeSettingsLocale.default_shopper_language
+    );
 }
 
 function getAcceptLanguageHeader(request) {
     const rawHeader = getRawAcceptLanguageHeader(request);
-    return rawHeader.toLowerCase();
+    return (rawHeader || '').toLowerCase();
 }
 /**
  * Creates a new Pencil Response object and returns it.
@@ -478,7 +483,7 @@ internals.getThemeTemplatesPath = () => {
 };
 export const name = 'Renderer';
 export const version = '0.0.1';
-export { register };
+export { register, getAcceptLanguageHeader };
 export default {
     register,
     name,
