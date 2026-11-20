@@ -125,6 +125,21 @@ bounds how long the build worker may take to start. A failed build is reported a
 partial output removed, but does not fail `init`, so a later `stencil serve --build` can
 still build it.
 
+To skip the build when the JavaScript has not changed, set `STENCIL_BUILD_CACHE_DIR` and mount
+a BuildKit cache there on the `stencil init` step, so it survives between image builds:
+
+```dockerfile
+RUN --mount=type=cache,target=/root/.cache/stencil-build \
+    stencil init ...
+```
+
+Finished builds are stored there keyed by a hash of what the bundle is made from: `assets/js`,
+`config/`, `package.json` and the lockfile, the webpack, babel and browserslist configs,
+`stencil.conf.*` and the Node version. A build whose inputs match a stored one copies it into
+`assets/dist` instead of running webpack; templates, styles, translations and `config.json` do
+not count, so changing only those reuses the last bundle. The directory must already exist
+(the mount creates it), so without the mount nothing is cached or written into the image.
+
 ## Features
 
 ### BrowserSync
