@@ -18,6 +18,7 @@ import {
     getFrontmatterContent,
     interpolateThemeSettings,
 } from '../../../lib/utils/frontmatter.js';
+import CompiledThemeCache from './compiled-theme-cache.js';
 
 const networkUtils = new NetworkUtils();
 const internals = {
@@ -27,7 +28,14 @@ const internals = {
     validCustomTemplatePageTypes: ['brand', 'category', 'page', 'product'],
 };
 function register(server, options) {
+    // Read before defaultsDeep, which back-fills options from a previous registration.
+    const immutableTheme = options.immutableTheme === true;
     internals.options = defaultsDeep(options, internals.options);
+    // Only a theme that cannot change while the server runs (`stencil serve`) may be cached;
+    // `stencil start` re-reads the theme on every request so edits show up on reload.
+    internals.compiledThemeCache = immutableTheme
+        ? new CompiledThemeCache(internals.getThemeTemplatesPath())
+        : null;
     server.expose('implementation', internals.implementation);
 }
 /**
@@ -264,10 +272,12 @@ internals.getResourceConfig = (data, request, configuration) => {
     // If it is an array, then it's an ajax request using `render_with` with multiple components
     // which don't have Frontmatter and needs to get it's config from the `stencil-config` header.
     if (templatePath && !Array.isArray(templatePath)) {
-        let rawTemplate = templateAssembler.getTemplateContentSync(
-            internals.getThemeTemplatesPath(),
-            templatePath,
-        );
+        let rawTemplate = internals.compiledThemeCache
+            ? internals.compiledThemeCache.getTemplateContentSync(templatePath)
+            : templateAssembler.getTemplateContentSync(
+                  internals.getThemeTemplatesPath(),
+                  templatePath,
+              );
         let frontmatterContent = getFrontmatterContent(rawTemplate);
         if (frontmatterContent !== null) {
             frontmatterContent = interpolateThemeSettings(
@@ -397,7 +407,7 @@ internals.getPencilResponse = (data, request, response, configuration, renderedR
             headers: response.headers,
             statusCode: response.status,
         },
-        internals.themeAssembler,
+        internals.compiledThemeCache || internals.themeAssembler,
         {
             debugQueriesEnabled: internals.options.debugQueriesEnabled !== false,
             inDevelopment: internals.options.inDevelopment !== false,

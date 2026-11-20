@@ -56,6 +56,11 @@ function buildManifest(srcManifest, options) {
     pluginsByName['./plugins/renderer/renderer.module.js'].storeSettingsLocale =
         options.storeSettingsLocale;
     pluginsByName['./plugins/theme-assets/theme-assets.module.js'].themePath = options.themePath;
+    // `stencil serve` promises the theme files will not change while it runs, which lets the
+    // renderer and the stylesheet handler compile once and cache. `stencil start` leaves it off.
+    const immutableTheme = options.immutableTheme === true;
+    pluginsByName['./plugins/renderer/renderer.module.js'].immutableTheme = immutableTheme;
+    pluginsByName['./plugins/theme-assets/theme-assets.module.js'].immutableTheme = immutableTheme;
     resManifest.register.plugins = _.reduce(
         pluginsByName,
         (pluginsArr, opts, plugin) => [...pluginsArr, { plugin, options: opts }],

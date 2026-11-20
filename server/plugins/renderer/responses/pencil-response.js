@@ -135,7 +135,7 @@ class PencilResponse {
             return this.data.context;
         }
         try {
-            await paper.loadTheme(templatePath, this.data.acceptLanguage);
+            await this.loadTheme(paper, templatePath);
             const output = await paper.renderTheme(templatePath, this.data);
             const response = h.response(output).code(this.data.statusCode);
             if (this.data.headers['set-cookie']) {
@@ -145,6 +145,44 @@ class PencilResponse {
         } catch (err) {
             console.error(err.message.red);
             return h.response().code(500);
+        }
+    }
+
+    /**
+     * Loads the templates and translations the page needs into paper's renderer.
+     *
+     * An assembler that can hand out compiled template specs (the immutable-theme cache used by
+     * `stencil serve`) skips paper's assemble/compile/evaluate cycle: each spec only needs
+     * binding to this request's Handlebars environment, which is what paper-handlebars itself
+     * does after evaluating a precompiled template.
+     *
+     * @param {Paper} paper
+     * @param {string|string[]} templatePath
+     */
+    async loadTheme(paper, templatePath) {
+        if (typeof this.assembler.getTemplateSpecs !== 'function') {
+            await paper.loadTheme(templatePath, this.data.acceptLanguage);
+            return;
+        }
+        const renderer = paper.getRenderer();
+        const { handlebars } = renderer;
+        let paths = [];
+        if (Array.isArray(templatePath)) {
+            paths = templatePath;
+        } else if (templatePath) {
+            paths = [templatePath];
+        }
+        const [translator, ...specSets] = await Promise.all([
+            this.assembler.getTranslator(this.data.acceptLanguage),
+            ...paths.map((p) => this.assembler.getTemplateSpecs(p, handlebars)),
+        ]);
+        renderer.setTranslator(translator);
+        for (const specs of specSets) {
+            for (const [name, spec] of Object.entries(specs)) {
+                if (handlebars.partials[name] === undefined) {
+                    handlebars.registerPartial(name, handlebars.template(spec));
+                }
+            }
         }
     }
 }

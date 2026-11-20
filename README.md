@@ -105,11 +105,25 @@ It differs from `stencil start` in ways that matter for those environments:
 -   **Caches for as long as you like.** Storefront responses are cached for 15 seconds by
     default, which suits editing templates but not a preview nobody is editing. Pass
     `--cache-ttl 300` to hold them for five minutes and cut the calls made to your store.
+-   **Compiles the theme once.** The theme directory is treated as fixed for the life of
+    the process. Templates are compiled the first time a page needs them and reused for
+    every later request, and every top-level stylesheet is compiled in the background as
+    soon as the server is listening, then served from memory, gzipped once and with an
+    `ETag`. Restart the process to pick up changed theme files. Stylesheets carry no source
+    map, and requesting another variation's stylesheet never switches the variation pages
+    render with.
 
 Theme JavaScript is expected to be built already. Pass `--build` to run the theme's
 production build task once before the server starts listening; a failed build exits
-non-zero without binding the port. SCSS needs no build step either way — it is compiled
-per request, exactly as in `stencil start`.
+non-zero without binding the port. SCSS needs no build step either way.
+
+In a container image it is better to build the JavaScript while the image is built, so
+containers start without it. With `STENCIL_INIT_BUILD=1` in the environment, `stencil init`
+runs the production build task after writing its config, unless `assets/dist` already
+exists or the theme has no build config. `STENCIL_BUILD_TIMEOUT` (seconds, default 900)
+bounds how long the build worker may take to start. A failed build is reported and its
+partial output removed, but does not fail `init`, so a later `stencil serve --build` can
+still build it.
 
 ## Features
 
