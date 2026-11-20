@@ -133,12 +133,14 @@ RUN --mount=type=cache,target=/root/.cache/stencil-build \
     stencil init ...
 ```
 
-Finished builds are stored there keyed by a hash of what the bundle is made from: `assets/js`,
-`config/`, `package.json` and the lockfile, the webpack, babel and browserslist configs,
-`stencil.conf.*` and the Node version. A build whose inputs match a stored one copies it into
-`assets/dist` instead of running webpack; templates, styles, translations and `config.json` do
-not count, so changing only those reuses the last bundle. The directory must already exist
-(the mount creates it), so without the mount nothing is cached or written into the image.
+Finished builds are stored there keyed by a hash of what the bundle is made from: every file in
+`assets/js`, any file elsewhere in the theme that those files import (such as
+`config/settings.js` or a `lang/*.json` bundled into the JavaScript), `package.json` and the
+lockfile, the webpack, babel and browserslist configs, `stencil.conf.*` and the Node version. A
+build whose inputs match a stored one copies it into `assets/dist` instead of running webpack;
+templates, styles and anything the JavaScript does not import do not count, so changing only
+those reuses the last bundle. The directory must already exist (the mount creates it), so
+without the mount nothing is cached or written into the image.
 
 ## Features
 
