@@ -125,7 +125,9 @@ runs the production build task after writing its config, unless `assets/dist` al
 exists or the theme has no build config. `STENCIL_BUILD_TIMEOUT` (seconds, default 900)
 bounds how long the build worker may take to start. A failed build is reported and its
 partial output removed, but does not fail `init`, so a later `stencil serve --build` can
-still build it.
+still build it. This build leaves out webpack source maps (the JavaScript is still minified
+exactly as in a release); producing them slows the minifier and nobody debugs a preview with
+them. `stencil bundle` and `stencil start` are unaffected.
 
 To skip the build when the JavaScript has not changed, set `STENCIL_BUILD_CACHE_DIR` and mount
 a BuildKit cache there on the `stencil init` step, so it survives between image builds:
