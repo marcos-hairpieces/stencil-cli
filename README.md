@@ -109,9 +109,11 @@ It differs from `stencil start` in ways that matter for those environments:
     the process. Templates are compiled the first time a page needs them and reused for
     every later request, and every top-level stylesheet is compiled in the background as
     soon as the server is listening, then served from memory, gzipped once and with an
-    `ETag`. Restart the process to pick up changed theme files. Stylesheets carry no source
-    map, and requesting another variation's stylesheet never switches the variation pages
-    render with.
+    `ETag`. Stylesheets are compiled in a short-lived child process, so the memory the Sass
+    compiler takes (about 200 MB for a large theme) is returned when it finishes instead of
+    staying with the server. Restart the process to pick up changed theme files.
+    Stylesheets carry no source map, and requesting another variation's stylesheet never
+    switches the variation pages render with.
 
 Theme JavaScript is expected to be built already. Pass `--build` to run the theme's
 production build task once before the server starts listening; a failed build exits

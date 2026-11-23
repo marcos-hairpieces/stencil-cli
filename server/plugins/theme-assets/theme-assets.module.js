@@ -1,20 +1,25 @@
 import { defaultsDeep } from 'lodash-es';
 import * as Boom from '@hapi/boom';
+import { fork } from 'child_process';
 import Crypto from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import zlib from 'zlib';
 import { uuidRegExp, uuid2int } from '../../lib/utils.js';
-import cssCompiler from '../../../lib/css/compile.js';
 import ThemeConfig from '../../../lib/theme-config.js';
 
 const gzip = promisify(zlib.gzip);
+const CSS_WORKER_PATH = fileURLToPath(new URL('./css-compile-worker.js', import.meta.url));
 
 const internals = {
     options: {},
     // `${variationIndex}\0${fileName}` -> Promise<{css, gzipped, etag}>, only for an immutable theme
     cssCache: null,
+    // Stylesheets waiting for the next compile worker: [{ job, resolve, reject }]
+    cssQueue: [],
+    cssWorkerRunning: false,
 };
 function register(server, options) {
     // Read before defaultsDeep, which back-fills options from a previous registration.
@@ -81,6 +86,9 @@ internals.cssHandler = async (request, h) => {
     // Get the theme configuration
     const configuration = await request.app.themeConfig.getConfig();
     const themeAssetsPath = internals.getThemeAssetsPath();
+    // Loaded on first use: `stencil serve` compiles in a worker and never needs it here.
+    // eslint-disable-next-line node/no-unsupported-features/es-syntax
+    const { default: cssCompiler } = await import('../../../lib/css/compile.js');
     try {
         const css = await cssCompiler.compile(configuration, themeAssetsPath, fileName);
         return h.response(css).type('text/css');
@@ -90,9 +98,57 @@ internals.cssHandler = async (request, h) => {
     }
 };
 /**
+ * Queues a stylesheet for compilation in a child process (css-compile-worker.js). One worker
+ * runs at a time and takes every stylesheet queued when it starts, so a burst of requests
+ * costs one process start and never several compiles competing for the CPU.
+ *
+ * @param {number} variationIndex
+ * @param {string} fileName
+ * @returns {Promise<string>} the compiled CSS
+ */
+internals.compileInWorker = (variationIndex, fileName) =>
+    new Promise((resolve, reject) => {
+        internals.cssQueue.push({ job: { variationIndex, fileName }, resolve, reject });
+        // Next tick, so every stylesheet requested in this turn joins the same worker.
+        setImmediate(internals.runCssWorker);
+    });
+internals.runCssWorker = () => {
+    if (internals.cssWorkerRunning || internals.cssQueue.length === 0) {
+        return;
+    }
+    internals.cssWorkerRunning = true;
+    const batch = internals.cssQueue.splice(0);
+    const settled = new Set();
+    const worker = fork(CSS_WORKER_PATH, [], { serialization: 'advanced' });
+    worker.on('message', ({ index, css, error }) => {
+        settled.add(index);
+        if (error === undefined) {
+            batch[index].resolve(css);
+        } else {
+            batch[index].reject(new Error(error));
+        }
+    });
+    const finish = (reason) => {
+        batch.forEach((entry, index) => {
+            if (!settled.has(index)) {
+                settled.add(index);
+                entry.reject(new Error(`The stylesheet compiler ${reason}`));
+            }
+        });
+        internals.cssWorkerRunning = false;
+        internals.runCssWorker();
+    };
+    worker.once('exit', (code, signal) => finish(`exited (${signal || code})`));
+    worker.once('error', (err) => {
+        finish(`failed to start: ${err.message}`);
+        worker.removeAllListeners('exit');
+    });
+    worker.send({ themePath: internals.options.themePath, jobs: batch.map(({ job }) => job) });
+};
+/**
  * Compiles a stylesheet of an immutable theme once per variation; concurrent requests for the
- * same file share one compilation. The variation's configuration comes from a private
- * ThemeConfig so a stylesheet request never switches the variation pages render with.
+ * same file share one compilation. Compilation runs in a child process, which also keeps a
+ * stylesheet request from switching the variation pages render with.
  *
  * @param {number} variationIndex
  * @param {string} fileName - stylesheet name without extension or config id
@@ -103,16 +159,7 @@ internals.getCachedCss = (variationIndex, fileName) => {
     let promise = internals.cssCache.get(key);
     if (!promise) {
         promise = (async () => {
-            const themeConfig = ThemeConfig.create(internals.options.themePath);
-            themeConfig.setVariation(variationIndex);
-            const configuration = await themeConfig.getConfig();
-            const css = await cssCompiler.compile(
-                configuration,
-                internals.getThemeAssetsPath(),
-                fileName,
-                cssCompiler.SASS_ENGINE_NAME,
-                { sourceMap: false },
-            );
+            const css = await internals.compileInWorker(variationIndex, fileName);
             const etag = Crypto.createHash('sha1').update(css).digest('hex');
             return { css, gzipped: await gzip(css), etag };
         })();
@@ -123,9 +170,9 @@ internals.getCachedCss = (variationIndex, fileName) => {
     return promise;
 };
 /**
- * Compiles every top-level stylesheet of an immutable theme for one variation, one at a time,
- * so the first visitor does not wait for SCSS compilation. Partials (`_name.scss`) are skipped
- * because they are only ever imported. Failures are reported per file and do not stop the rest.
+ * Compiles every top-level stylesheet of an immutable theme for one variation, in a single
+ * worker, so the first visitor does not wait for SCSS compilation. Partials (`_name.scss`) are
+ * skipped because they are only ever imported. Failures are reported per file.
  *
  * @param {number} variationIndex
  * @param {object} [logger]
@@ -149,18 +196,22 @@ internals.warmCssCache = async (variationIndex = 0, logger = console) => {
         .map((entry) => entry.slice(0, -(ext.length + 1)))
         // The main stylesheet first: every page links it.
         .sort((a, b) => (b === 'theme') - (a === 'theme') || a.localeCompare(b));
+    const results = await Promise.allSettled(
+        // All queued before the worker starts, so one worker compiles them all.
+        fileNames.map((fileName) => internals.getCachedCss(variationIndex, fileName)),
+    );
     const compiled = [];
     const failed = [];
-    for (const fileName of fileNames) {
-        try {
-            // eslint-disable-next-line no-await-in-loop
-            await internals.getCachedCss(variationIndex, fileName);
-            compiled.push(fileName);
-        } catch (err) {
-            failed.push(fileName);
-            logger.error(`Could not precompile ${fileName}.${ext}: ${err.message || err}`);
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+            compiled.push(fileNames[index]);
+        } else {
+            failed.push(fileNames[index]);
+            logger.error(
+                `Could not precompile ${fileNames[index]}.${ext}: ${result.reason.message}`,
+            );
         }
-    }
+    });
     return { compiled, failed };
 };
 /**
