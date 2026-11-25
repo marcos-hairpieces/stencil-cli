@@ -53,10 +53,12 @@ Run `stencil bundle` to validate your code and create a zip bundle file that can
 `stencil bundle` keeps each theme JavaScript build in `~/.cache/stencil-cli/build` (or
 `$STENCIL_BUILD_CACHE_DIR`), keyed by a hash of what the bundle is made from. When nothing
 JavaScript-related changed since an earlier bundle on the same machine, that build is put back in
-`assets/dist` instead of running the theme's build task. When it did change, webpack 3's minifier
-only minifies the files whose code changed, in parallel, with the theme's own plugin and options,
-so the output is byte-identical to a build without the cache. Pass `--no-build-cache` to always
-run the full build.
+`assets/dist` instead of running the theme's build task. When it did change, only the changed
+files are redone: babel-loader keeps its cache in the same place (one per set of lockfiles and
+Babel/browserslist config, unless the theme picks its own cache path), and webpack 3's minifier
+only minifies the files whose code changed, in parallel, with the theme's own plugin and options.
+The output is byte-identical to a build without the cache. Pass `--no-build-cache` to always
+run the full build. Preview builds (`STENCIL_INIT_BUILD=1`) use the same caches.
 
 Run `stencil release` to tag a new version of your theme, create a [GitHub release](https://help.github.com/articles/about-releases/)
 in your theme repository, and upload the zip bundle file to the release assets.
