@@ -6,6 +6,7 @@ import ThemeConfig from '../lib/theme-config.js';
 import Bundle from '../lib/stencil-bundle.js';
 import { printCliResultErrorAndExit, prepareCommand } from '../lib/cliCommon.js';
 import BuildConfigManager from '../lib/BuildConfigManager.js';
+import { BUNDLE_BUILD_HOOKS, defaultBuildCacheDir } from '../lib/theme-build.js';
 
 program
     .version(PACKAGE_INFO.version)
@@ -26,6 +27,10 @@ program
         '-t, --timeout [timeout]',
         'Set a timeout for the bundle operation. Default is 20 secs',
         '60',
+    )
+    .option(
+        '--no-build-cache',
+        "Always run the theme's JavaScript build, instead of reusing an earlier build of the same inputs",
     );
 const cliOptions = prepareCommand(program);
 const themeConfig = ThemeConfig.getInstance(THEME_PATH);
@@ -46,7 +51,12 @@ async function run() {
         }
         const rawConfig = await themeConfig.getRawConfig();
         const timeout = cliOptions.timeout * 1000; // seconds
-        const buildConfigManager = new BuildConfigManager({ timeout });
+        // The minify cache keeps its entries next to the reused builds.
+        process.env.STENCIL_BUILD_CACHE_DIR = defaultBuildCacheDir();
+        const buildConfigManager = new BuildConfigManager({
+            timeout,
+            workerPreload: cliOptions.buildCache === false ? [] : BUNDLE_BUILD_HOOKS,
+        });
         await buildConfigManager.initConfig();
         const bundle = new Bundle(
             THEME_PATH,

@@ -50,6 +50,14 @@ Run with `-o` or `--open` to automatically open up a browser.
 
 Run `stencil bundle` to validate your code and create a zip bundle file that can be uploaded to BigCommerce.
 
+`stencil bundle` keeps each theme JavaScript build in `~/.cache/stencil-cli/build` (or
+`$STENCIL_BUILD_CACHE_DIR`), keyed by a hash of what the bundle is made from. When nothing
+JavaScript-related changed since an earlier bundle on the same machine, that build is put back in
+`assets/dist` instead of running the theme's build task. When it did change, webpack 3's minifier
+only minifies the files whose code changed, in parallel, with the theme's own plugin and options,
+so the output is byte-identical to a build without the cache. Pass `--no-build-cache` to always
+run the full build.
+
 Run `stencil release` to tag a new version of your theme, create a [GitHub release](https://help.github.com/articles/about-releases/)
 in your theme repository, and upload the zip bundle file to the release assets.
 This is useful for tracking your changes in your Theme, and is the tool we use to create new releases in BigCommerce
