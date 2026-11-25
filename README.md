@@ -127,7 +127,11 @@ bounds how long the build worker may take to start. A failed build is reported a
 partial output removed, but does not fail `init`, so a later `stencil serve --build` can
 still build it. This build leaves out webpack source maps (the JavaScript is still minified
 exactly as in a release); producing them slows the minifier and nobody debugs a preview with
-them. `stencil bundle` and `stencil start` are unaffected.
+them. For webpack 3 themes (`webpack.optimize.UglifyJsPlugin`) it also minifies the output
+files in parallel on worker threads (up to one per CPU, and one per GB of memory), each running
+the theme's own minifier with the theme's options on one file, so the files are byte for byte
+the ones a normal build makes.
+`stencil bundle` and `stencil start` are unaffected.
 
 To skip the build when the JavaScript has not changed, set `STENCIL_BUILD_CACHE_DIR` and mount
 a BuildKit cache there on the `stencil init` step, so it survives between image builds:
@@ -145,6 +149,20 @@ build whose inputs match a stored one copies it into `assets/dist` instead of ru
 templates, styles and anything the JavaScript does not import do not count, so changing only
 those reuses the last bundle. The directory must already exist (the mount creates it), so
 without the mount nothing is cached or written into the image.
+
+When the JavaScript did change and webpack runs, the same directory makes that build quicker:
+
+-   The theme's `node_modules/.cache` is linked to `node-modules-cache` in it for the duration
+    of the build, so what tools keep there carries over between image builds: babel-loader's
+    transpiled files (with `cacheDirectory: true`) and webpack 4's minifier output. The link
+    is removed afterwards. A theme that already has a `node_modules/.cache` keeps its own.
+-   For webpack 3 themes, each minified file is stored in `uglify-js`, keyed by the file
+    webpack produced, the uglify-js and plugin versions and the plugin options. webpack 3
+    renders unchanged chunks identically, so a change to one page script only minifies that
+    page's chunk and the rest come from the cache. The oldest entries are removed once the
+    stored files pass 256 MB. Options the cache cannot key on (functions, source maps,
+    extracted comments) leave the minifier to run as usual; any other problem with the cache
+    or the workers does the same for the files concerned, so it never fails a build.
 
 ## Features
 
