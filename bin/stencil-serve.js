@@ -25,7 +25,12 @@ program
         parseInt,
     )
     .option('--build', "Run the theme's production build task once before serving")
-    .option('-t, --timeout [timeout]', 'Timeout in seconds for --build. Default is 60', '60');
+    .option('-t, --timeout [timeout]', 'Timeout in seconds for --build. Default is 60', '60')
+    .option(
+        '--precompile-css',
+        'Compile the theme stylesheets into .stencil-css for a container image and exit, without serving. ' +
+            'The server loads them at startup while the stylesheets and theme settings still match',
+    );
 const cliOptions = prepareCommand(program);
 const options = {
     port: cliOptions.port,
@@ -39,4 +44,8 @@ const options = {
     build: cliOptions.build,
     timeout: cliOptions.timeout,
 };
-new StencilServe().run(options).catch(printCliResultErrorAndExit);
+if (cliOptions.precompileCss) {
+    new StencilServe().precompileCss(options).catch(printCliResultErrorAndExit);
+} else {
+    new StencilServe().run(options).catch(printCliResultErrorAndExit);
+}

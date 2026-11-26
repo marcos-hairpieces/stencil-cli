@@ -182,15 +182,25 @@ internals.registerRoutes = (server) => {
             },
         },
     ]);
-    // Opt-in, for deployments that need a liveness probe. Without it every path falls through
+    // Opt-in, for deployments that need a health probe. Without it every path falls through
     // to the renderer catch-all, so probing costs a full store round-trip and reports the
     // store's health rather than this process's. Hapi routes by specificity, not registration
     // order, so this literal path takes precedence over '/{url*}' regardless of placement.
+    // Answers 503 until the theme's stylesheets are ready (ThemeAssets.isReady), so an
+    // orchestrator that waits for a healthy container before stopping the previous one never
+    // sends visitors to a server that is still compiling. It turns ready once compiling has
+    // finished, even if a stylesheet failed, so a broken stylesheet never restarts the server.
     if (internals.options.healthCheckEnabled) {
         server.route({
             method: 'GET',
             path: internals.paths.health,
-            handler: () => ({ status: 'ok' }),
+            handler: (request, h) => {
+                const { isReady } = request.server.plugins.ThemeAssets || {};
+                if (typeof isReady === 'function' && !isReady()) {
+                    return h.response({ status: 'starting' }).code(503);
+                }
+                return { status: 'ok' };
+            },
             options: {
                 state: {
                     failAction: 'log',

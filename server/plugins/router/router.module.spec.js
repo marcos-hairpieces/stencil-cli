@@ -101,10 +101,12 @@ describe('Router with the health check enabled', () => {
         name: 'Renderer',
         version: '0.0.1',
     };
+    let themeReady = true;
     const ThemeAssetsMock = {
         register(_server) {
             _server.expose('cssHandler', (request, h) => h.response('CssHandlerFired'));
             _server.expose('assetHandler', (request, h) => h.response('assetHandlerFired'));
+            _server.expose('isReady', () => themeReady);
         },
         name: 'ThemeAssets',
         version: '0.0.1',
@@ -134,6 +136,16 @@ describe('Router with the health check enabled', () => {
         const response = await server.inject({ method: 'GET', url: '/_stencil/health' });
         expect(response.statusCode).toEqual(200);
         expect(response.result).toEqual({ status: 'ok' });
+    });
+    it('should report starting until the theme stylesheets are ready', async () => {
+        themeReady = false;
+        const starting = await server.inject({ method: 'GET', url: '/_stencil/health' });
+        themeReady = true;
+        const ready = await server.inject({ method: 'GET', url: '/_stencil/health' });
+
+        expect(starting.statusCode).toEqual(503);
+        expect(starting.result).toEqual({ status: 'starting' });
+        expect(ready.statusCode).toEqual(200);
     });
     it('should still route other paths to the renderer', async () => {
         const response = await server.inject({ method: 'GET', url: '/some-page' });

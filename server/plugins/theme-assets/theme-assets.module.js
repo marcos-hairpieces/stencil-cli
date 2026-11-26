@@ -2,13 +2,13 @@ import { defaultsDeep } from 'lodash-es';
 import * as Boom from '@hapi/boom';
 import { fork } from 'child_process';
 import Crypto from 'crypto';
-import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import zlib from 'zlib';
 import { uuidRegExp, uuid2int } from '../../lib/utils.js';
 import ThemeConfig from '../../../lib/theme-config.js';
+import { listStylesheets, loadPrecompiled } from '../../../lib/css-precompile.js';
 
 const gzip = promisify(zlib.gzip);
 const CSS_WORKER_PATH = fileURLToPath(new URL('./css-compile-worker.js', import.meta.url));
@@ -20,15 +20,20 @@ const internals = {
     // Stylesheets waiting for the next compile worker: [{ job, resolve, reject }]
     cssQueue: [],
     cssWorkerRunning: false,
+    cssReady: true,
 };
 function register(server, options) {
     // Read before defaultsDeep, which back-fills options from a previous registration.
     const immutableTheme = options.immutableTheme === true;
     internals.options = defaultsDeep(options, internals.options);
     internals.cssCache = immutableTheme ? new Map() : null;
+    // An immutable theme is ready once warmCssCache has filled the cache; otherwise
+    // stylesheets compile per request and there is nothing to wait for.
+    internals.cssReady = !immutableTheme;
     server.expose('cssHandler', internals.cssHandler);
     server.expose('assetHandler', internals.assetHandler);
     server.expose('warmCssCache', internals.warmCssCache);
+    server.expose('isReady', () => internals.cssReady);
 }
 /**
  * Get the variation index from the "ConfigId" in the css filename
@@ -158,11 +163,9 @@ internals.getCachedCss = (variationIndex, fileName) => {
     const key = `${variationIndex}\0${fileName}`;
     let promise = internals.cssCache.get(key);
     if (!promise) {
-        promise = (async () => {
-            const css = await internals.compileInWorker(variationIndex, fileName);
-            const etag = Crypto.createHash('sha1').update(css).digest('hex');
-            return { css, gzipped: await gzip(css), etag };
-        })();
+        promise = internals
+            .compileInWorker(variationIndex, fileName)
+            .then((css) => internals.cacheCompiledCss(css));
         internals.cssCache.set(key, promise);
         // A failed compile is not cached, so the next request reports the error again.
         promise.catch(() => internals.cssCache.delete(key));
@@ -170,32 +173,55 @@ internals.getCachedCss = (variationIndex, fileName) => {
     return promise;
 };
 /**
- * Compiles every top-level stylesheet of an immutable theme for one variation, in a single
- * worker, so the first visitor does not wait for SCSS compilation. Partials (`_name.scss`) are
- * skipped because they are only ever imported. Failures are reported per file.
+ * @param {string} css
+ * @returns {Promise<{css: string, gzipped: Buffer, etag: string}>}
+ */
+internals.cacheCompiledCss = async (css) => {
+    const etag = Crypto.createHash('sha1').update(css).digest('hex');
+    return { css, gzipped: await gzip(css), etag };
+};
+/**
+ * Fills the stylesheet cache of an immutable theme for one variation, so the first visitor does
+ * not wait for SCSS compilation: from the stylesheets the image build precompiled when they
+ * match this theme exactly (lib/css-precompile.js), otherwise by compiling every top-level
+ * stylesheet in a single worker. Failures are reported per file. Until this settles, isReady()
+ * is false, which the health route reports so a deployment keeps the previous container
+ * serving meanwhile.
  *
  * @param {number} variationIndex
  * @param {object} [logger]
- * @returns {Promise<{compiled: string[], failed: string[]}>}
+ * @returns {Promise<{compiled: string[], failed: string[], precompiled: boolean}>}
  */
 internals.warmCssCache = async (variationIndex = 0, logger = console) => {
     if (!internals.cssCache) {
-        return { compiled: [], failed: [] };
+        return { compiled: [], failed: [], precompiled: false };
     }
-    const themeConfig = ThemeConfig.create(internals.options.themePath);
-    const { css_compiler: cssCompilerName } = await themeConfig.getRawConfig();
-    const ext = cssCompilerName === 'css' ? 'css' : 'scss';
-    let entries;
     try {
-        entries = await fs.readdir(path.join(internals.getThemeAssetsPath(), ext));
-    } catch (err) {
-        return { compiled: [], failed: [] };
+        return await internals.fillCssCache(variationIndex, logger);
+    } finally {
+        internals.cssReady = true;
     }
-    const fileNames = entries
-        .filter((entry) => entry.endsWith(`.${ext}`) && !entry.startsWith('_'))
-        .map((entry) => entry.slice(0, -(ext.length + 1)))
-        // The main stylesheet first: every page links it.
-        .sort((a, b) => (b === 'theme') - (a === 'theme') || a.localeCompare(b));
+};
+internals.fillCssCache = async (variationIndex, logger) => {
+    const { themePath } = internals.options;
+    let precompiled = null;
+    try {
+        precompiled = await loadPrecompiled(themePath, variationIndex);
+    } catch (err) {
+        logger.error(`Could not read the precompiled stylesheets: ${err.message}`);
+    }
+    if (precompiled) {
+        const loaded = [...precompiled.entries()].map(([fileName, css]) => {
+            const promise = internals.cacheCompiledCss(css);
+            internals.cssCache.set(`${variationIndex}\0${fileName}`, promise);
+            return promise;
+        });
+        await Promise.all(loaded);
+        return { compiled: [...precompiled.keys()], failed: [], precompiled: true };
+    }
+    const themeConfig = ThemeConfig.create(themePath);
+    const { css_compiler: cssCompilerName } = await themeConfig.getRawConfig();
+    const { ext, fileNames } = listStylesheets(themePath, cssCompilerName);
     const results = await Promise.allSettled(
         // All queued before the worker starts, so one worker compiles them all.
         fileNames.map((fileName) => internals.getCachedCss(variationIndex, fileName)),
@@ -212,7 +238,7 @@ internals.warmCssCache = async (variationIndex = 0, logger = console) => {
             );
         }
     });
-    return { compiled, failed };
+    return { compiled, failed, precompiled: false };
 };
 /**
  * Assets handler
